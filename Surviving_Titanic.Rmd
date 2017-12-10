@@ -1,0 +1,211 @@
+---
+title: "Surviving on the Titanic"
+author: "Charles Westby"
+date: "12/9/2017"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+#Synopsis
+Almost everyone is familiar with the sinking of the Titanic. When the large ship sunk in the Atlantic, killing a majority of its passengers, it stunned the world. This report explores a dataset containing information on passengers on the Titanic. Some survived and some passed away. In the end, a machine learning model will be built using this information, in order to predict who will survive the Titanic given a different set of passengers. 
+
+#Exploratory Analysis
+##Loading Packages and Data
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+#loading the library packages and dataset
+library(dplyr)
+library(ggplot2)
+library(caret)
+library(gridExtra)
+library(VIM)
+
+titanic <- read.csv("train.csv")
+```
+
+##Previewing the Data
+```{r echo=TRUE}
+str(titanic)
+```
+
+```{r echo=TRUE}
+head(titanic)
+```
+
+####Summary
+```{r echo=TRUE}
+summary(titanic)
+```
+
+The dataset contains records of 891 passengers. These records contain passenger ID, their class on the ship, age, sex, name, ticket number, cabin number, fare, where they boarded the ship and other measurements of family members on the ship. Some of these variables can be removed, which will happen in the next section.
+
+##Manipulating Dataset
+###Creating Factor Variables
+```{r echo=TRUE}
+#Creating Factor Variables out of Survived and Pclass columns
+titanic$Survived <- factor(titanic$Survived, labels = c("Passed", "Survived"))
+titanic$Pclass <- factor(titanic$Pclass, labels = c("First", "Second", "Third"))
+```
+
+###Creating Subset of Titanic Dataset
+```{r echo=TRUE}
+#Subsetting and viewing dataset
+titanic_sub <- titanic %>%
+  select(-PassengerId, -Name, -Ticket, -Cabin, -SibSp, -Parch)
+glimpse(titanic_sub)
+```
+
+###NA Values
+####Finding NA Values
+```{r echo=TRUE}
+#Finding total NA values in Age and Fare columns
+sum(is.na(titanic_sub$Age))
+sum(is.na(titanic_sub$Fare))
+```
+
+####Replacing NA Values
+```{r echo=TRUE}
+#Imputing NA values
+titanic_sub <- kNN(titanic_sub)
+titanic_sub <- titanic_sub %>%
+  select(-(Survived_imp:Embarked_imp))
+glimpse(titanic_sub)
+```
+
+Initially the variables, Survived and Pclass are stored as numeric variables. However, they needed to be converted to factor variables. In order to create clarity when looking at the dataset, labels were added to the levels of the factor variables. The 0 and 1 in the Survived column were converted to Passed and Survived respectively. Also the 1, 2, and 3 in the Pclass column were converted to First, Second and Third. The variables Name, PassengerID and Cabin were removed because they are attributes that will be unique to each passenger. These variables will not be useful in the analysis. 
+Also there are 177 NA values in the Age variable of the dataset. These NA values will cause problems when trying to build a machine learning model. For this analysis, a suitable replacement for these NA values will be knn imputation. Knn imputation will replace missing values with a guess based on people with similar attributes.
+
+###Finding Relationships
+####Tables
+```{r echo=TRUE}
+#Creating Tables to See Who Survived and Who Didn't
+table(titanic$Survived, titanic$Sex)
+table(titanic$Survived, titanic$Pclass)
+table(titanic$Survived, titanic$Embarked)
+```
+
+These tables show that the majority of survivors were female. It also shows that many who passed were male, from third class and who embarked from Southampton. Many of the survivors were also from Southampton, since it appears that this dock was where most passengers boarded.
+
+###Visualizing Data
+```{r echo=TRUE, warning=FALSE, message=FALSE}
+#Creating Scatter Plots of Fare vs Age 
+fa_class <- ggplot(titanic_sub, aes(x= Age, y = Fare, col = Pclass)) +
+  geom_point() +
+  labs(title = "Fare vs Age (Class)")
+
+fa_survival <- ggplot(titanic_sub, aes(x=Age, y = Fare, col = Survived)) +
+  geom_point() +
+  labs(title = "Fare vs Age (Survival)")
+
+grid.arrange(fa_class, fa_survival, ncol = 1, nrow = 2)
+```
+
+```{r echo=TRUE, warning=FALSE, message=FALSE}
+#Creating Histograms of Age
+age_s_hist <- ggplot(titanic_sub, aes(x=Age, fill = Survived)) +
+  geom_histogram() + 
+  labs(title = "Age Histogram by Survival")
+
+age_c_hist <- ggplot(titanic_sub, aes(x=Age, fill = Pclass)) +
+  geom_histogram() + 
+  labs(title = "Age Histogram by Class")
+grid.arrange(age_s_hist, age_c_hist, ncol = 1, nrow = 2)
+```
+
+```{r echo=TRUE, warning=FALSE, message=FALSE}
+#Creating histograms of Fare
+fare_s_hist <- ggplot(titanic_sub, aes(x=Fare, fill = Survived)) +
+  geom_histogram() + 
+  labs(title = "Fare Histogram by Survival")
+
+fare_c_hist <- ggplot(titanic_sub, aes(x=Fare, fill = Pclass)) +
+  geom_histogram() + 
+  labs(title = "Fare Histogram by Class")
+
+grid.arrange(fare_c_hist, fare_s_hist, ncol = 1, nrow = 2)
+```
+
+These graphs show that there is no relationship between the `Age` and `Fare` variables. However it does show that those who survived often paid a higher fare. In addition, the *Age Histogram by Survival* graph shows that older people passed away at a higher proportion than younger people. The age with the highest rate of survival occurs on the low end of the graph, suggesting that children survived at a higher rate. Additionally, most of the riders of the Titanic were between the ages of 20 and 40. The graph *Fare Histogram by Class* shows that those who paid the lowest fares died at the highest rates. Now that the Exploratory Analysis is concluded, the Machine Learning portion of the paper can begin.
+
+#Machine Learning Models
+##Partitioning The Data
+```{r echo=TRUE, warning=FALSE, message=FALSE}
+set.seed(366284)
+#Partitioning the data and subsetting data into a Train Set and a Test Set
+inTrain <- createDataPartition(y = titanic_sub$Survived, p = 0.7, list=FALSE)
+train <- titanic_sub[inTrain, ]
+test <- titanic_sub[-inTrain, ]
+```
+
+During this step the dataset is split into a train set and a test set. The train set contains 70% of the data that was selected using random sampling. The test set contains the other 30% of the data. The `set.seed` function was called in order to ensure reproducibility for this paper.
+
+##Random Forest Model
+```{r echo=TRUE, warning=FALSE, message=FALSE}
+#Creating Random Forest Model
+model_rf <- train(Survived ~ ., train, method = "ranger", preProcess = c("center", "scale"), weights = train$Fare, tuneLength = 7, trControl = trainControl(method = "cv", number = 10, repeats = 10))
+model_rf
+```
+
+This table shows the results of creating the Random Forest Model. The algorithm used accuracy to select the optimal model using the largest value. The final values for the model were 7 for mtry and gini for splitrule. This model's accuracy was about 83.37%.
+
+```{r echo=TRUE, warning=FALSE, message=FALSE}
+#Testing Accuracy of Model
+predictions_rf <- predict(model_rf, test)
+confusionMatrix(predictions_rf, test$Survived)
+```
+
+The model predicted with 84.59% accuracy when used to compare the predicted values for the test set with the actual values in the test set. This result is in line with the model which predicted that it would predict values at about 83.37% accuracy. Although this result is satisfactory, it is beneficial to test other models. The Sensitivity or True Positive Rate was 90.24%. The Specificity or True Negative Rate was 75.49%. Thus, the model was better at predicting who passed correctly than it was at predicting who survived.
+
+##Ada Model
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+#Creating Ada Model
+model_ada <- train(Survived ~ ., train, method = "ada", weights = train$Fare, trControl = trainControl(method = "cv", number = 10, repeats = 10))
+model_ada
+```
+
+For this model accuracy was used to select the optimal model using the largest value. The final values used for the model were 50 for iter, 3 for maxdepth, and 0.1 for nu. This model should predict with about 82.39% accuracy. When testing the model, it should yield slightly less accurate results than the Random Forest Model.
+
+```{r echo=TRUE, warning=FALSE, message=FALSE}
+#Testing Ada Model
+predictions_ada <- predict(model_ada, test)
+confusionMatrix(predictions_ada, test$Survived)
+```
+
+This model predicted with about 83.08% accuracy. Althouh its predictions were more successful than the 82.39% shown in the model, its accuracy was still close to what was predicted. In addition, the Sensitivity or True Positive Rate was 92.68% and the Specificity or True Negative Rate was 67.65%. This Ada Model, like the Random Forest Model, is better at predicting who would pass away on the Titanic than it is at predicting who would survive.
+
+#Conclusion
+Since the Random Tree Model estimated that it would predict with higher accuracy than the Ada Model and showed that it actually predicted with better accuracy than the Ada model when tested, the Random Tree Model is the model that will be used on our outside data. Although there were many trends that may have ensured survival on the Titanic, more than likely a person would die if they were a passenger. Women survived more but still many died. The same is true for those who paid higher fares and were young. Still we will test how this model performs when given data from another dataset. 
+
+##Testing Random Forest Model
+###Loading Data Set
+```{r echo=TRUE}
+#Loading Data Set
+#Turning Pclass to Factor Variable
+#Imputing NA Values
+final_test  <- read.csv("test.csv", header = TRUE)
+final_test$Pclass <- factor(final_test$Pclass, 
+    labels = c("First", "Second", "Third"))
+final_test <- kNN(final_test)
+final_test <- final_test %>%
+  select(-(PassengerId_imp:Embarked_imp))
+
+dim(final_test)
+```
+
+Here the dataset to be used for predictions is loaded and the `Pclass` variable is converted to a factor for testing. In addition, knn imputation is used for all missing values in the `titanic` dataset. This imputation was used mostly in the Age column and for one passenger whose Fare was missing.  Finally, the dimensions for the dataset are shown. So there will be 418 predictions for this dataset. 
+
+```{r echo=TRUE}
+#Making Predictions
+#Adding Survived Column
+#Selecting Columns for Submission
+#Changing Survived Column back to Factors of 0 and 1
+#Writing CSV file for submission. Removing row names
+predictions_rf <- predict(model_rf, final_test)
+final_test$Survived <- predictions_rf 
+submission_rf <- final_test[, c("PassengerId", "Survived")]
+submission_rf$Survived <- factor(submission_rf$Survived, labels = c(0, 1))
+write.csv(submission_rf, "titanic_rf_predictions.csv", row.names = FALSE)
+length(predictions_rf)
+```
+
+There were 418 predictions made and stored in the variable `predictions_rf`. For the purpose of submission to the Kaggle competition, a heading was added to the dataframe and it was saved as a csv file. 

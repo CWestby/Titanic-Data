@@ -1,0 +1,10 @@
+name: Publish Document
+title:
+username:
+account: rpubs
+server: rpubs.com
+hostUrl: rpubs.com
+appId: https://api.rpubs.com/api/v1/document/339665/118fab74a0964de186585068a3952d14
+bundleId: https://api.rpubs.com/api/v1/document/339665/118fab74a0964de186585068a3952d14
+url: http://rpubs.com/C_Westby1984/339665
+when: 1512937027.61848
